@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05070f">
+<title>流星雨许愿</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #05070f;
+    color: #fff;
+    position: fixed; inset: 0;
+  }
+
+  /* ===== 夜空底色（深黑到深蓝的径向渐变） ===== */
+  #sky {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 120% 90% at 70% 10%, #101b3a 0%, #0a0f22 45%, #05070f 100%);
+    z-index: 0;
+  }
+  canvas#stars { position: absolute; inset: 0; z-index: 1; }
+
+  /* ===== 流星层 ===== */
+  #meteorLayer { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
+
+  .meteor {
+    position: absolute;
+    width: 2px; height: 2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 6px 1px rgba(255,255,255,.9);
+    will-change: transform, opacity;
+    transform: translate(0, 0);
+  }
+  /* 流星尾巴：斜向拖尾（流星往左下飞，尾巴甩向右上） */
+  .meteor::before {
+    content: '';
+    position: absolute;
+    top: 1px; left: 0;
+    width: 110px; height: 1.5px;
+    transform-origin: left center;
+    transform: rotate(-14deg);
+    background: linear-gradient(to right, rgba(255,255,255,.85), rgba(255,255,255,0));
+    filter: blur(.4px);
+    border-radius: 2px;
+  }
+  .meteor.bright { width: 3px; height: 3px; }
+  .meteor.bright::before {
+    width: 170px; height: 2px;
+    background: linear-gradient(to right, rgba(255,244,214,.95), rgba(255,255,255,0));
+  }
+  /* 愿望文字跟在流星头旁边 */
+  .meteor .wish-text {
+    position: absolute;
+    left: 14px; top: -10px;
+    white-space: nowrap;
+    font-size: 15px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,.95);
+    text-shadow: 0 0 10px rgba(120,160,255,.8), 0 1px 3px rgba(0,0,0,.8);
+    opacity: 0;
+  }
+  .meteor .wish-text::before { content: '✨ '; font-size: 13px; }
+
+  /* ===== 顶部导航栏 ===== */
+  #nav {
+    position: absolute; top: 0; left: 0; right: 0;
+    z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
+    background: linear-gradient(to bottom, rgba(5,7,15,.85), rgba(5,7,15,0));
+  }
+  #nav .nav-btn {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,.9);
+    font-size: 20px;
+    cursor: pointer; user-select: none;
+  }
+  #nav h1 {
+    font-size: 17px; font-weight: 600; letter-spacing: 2px;
+    text-shadow: 0 0 12px rgba(140,170,255,.6);
+  }
+  #nav .nav-warn {
+    font-size: 18px; color: #ffd54a;
+    filter: drop-shadow(0 0 6px rgba(255,213,74,.5));
+    cursor: pointer; user-select: none;
+  }
+
+  /* ===== 提示条（对齐参考图样式） ===== */
+  #toast {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 58px);
+    left: 14px; right: 14px;
+    z-index: 20;
+    background: rgba(30,34,48,.88);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 11px 14px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 14px;
+    color: rgba(255,255,255,.92);
+    opacity: 0; transform: translateY(-8px);
+    transition: opacity .3s, transform .3s;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast .t-icon { color: #ffd54a; font-size: 16px; }
+  #toast .t-main { font-weight: 600; }
+  #toast .t-sub { font-size: 12.5px; color: rgba(255,255,255,.55); margin-top: 1px; }
+  #toast .t-time { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.4); flex-shrink: 0; }
+
+  /* ===== 许愿成功弹窗 ===== */
+  #successMask {
+    position: absolute; inset: 0; z-index: 30;
+    background: rgba(3,5,12,.55);
+    backdrop-filter: blur(3px);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s;
+  }
+  #successMask.show { opacity: 1; pointer-events: auto; }
+  #successCard {
+    width: min(78vw, 320px);
+    background: linear-gradient(160deg, rgba(38,48,84,.96), rgba(16,22,44,.96));
+    border: 1px solid rgba(150,175,255,.35);
+    border-radius: 20px;
+    padding: 34px 26px 30px;
+    text-align: center;
+    box-shadow: 0 0 46px rgba(100,140,255,.35), 0 18px 50px rgba(0,0,0,.6);
+    transform: scale(.86);
+    transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  #successMask.show #successCard { transform: scale(1); }
+  #successCard .s-icon { font-size: 44px; line-height: 1; filter: drop-shadow(0 0 14px rgba(255,220,140,.65)); }
+  #successCard .s-title {
+    margin-top: 14px;
+    font-size: 25px; font-weight: 700; letter-spacing: 4px;
+    background: linear-gradient(to right, #ffe9b0, #fff, #cfe0ff);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 20px rgba(255,230,170,.25);
+  }
+  #successCard .s-sub {
+    margin-top: 10px;
+    font-size: 14.5px; letter-spacing: 2px;
+    color: rgba(255,255,255,.78);
+  }
+  #successCard .s-divider {
+    margin: 18px auto 0; width: 56px; height: 1px;
+    background: linear-gradient(to right, transparent, rgba(180,200,255,.7), transparent);
+  }
+
+  /* ===== 底部输入区 ===== */
+  #inputBar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    z-index: 10;
+    padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    background: linear-gradient(to top, rgba(5,7,15,.92), rgba(5,7,15,0));
+    display: flex; align-items: center; gap: 10px;
+  }
+  #wishInput {
+    flex: 1;
+    background: rgba(28,32,46,.92);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 22px;
+    padding: 12px 18px;
+    color: #fff;
+    font-size: 15px;
+    outline: none;
+    transition: border-color .25s, box-shadow .25s;
+  }
+  #wishInput::placeholder { color: rgba(255,255,255,.38); }
+  #wishInput:focus { border-color: rgba(150,175,255,.55); box-shadow: 0 0 14px rgba(110,140,255,.22); }
+  #wishInput.shake { animation: shake .4s; border-color: rgba(255,120,120,.7); }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); }
+  }
+  #sendBtn {
+    width: 44px; height: 44px; flex-shrink: 0;
+    border: none; border-radius: 50%;
+    background: linear-gradient(150deg, #6d8dff, #4a5fd9);
+    color: #fff; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 0 16px rgba(100,130,255,.45);
+    transition: transform .15s, opacity .2s, box-shadow .2s;
+  }
+  #sendBtn:active { transform: scale(.88); }
+  #sendBtn:disabled { opacity: .45; box-shadow: none; cursor: default; }
+  #sendBtn .arrow { display: block; transform: translateY(1px); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .meteor, .meteor::before { animation-duration: 4s !important; }
+  }
+</style>
+</head>
+<body>
+  <div id="sky"></div>
+  <canvas id="stars"></canvas>
+  <div id="meteorLayer"></div>
+
+  <nav id="nav">
+    <div class="nav-btn" id="backBtn" aria-label="返回">‹</div>
+    <h1>流星雨许愿</h1>
+    <div class="nav-warn" id="warnBtn" aria-label="说明">❕</div>
+  </nav>
+
+  <div id="toast">
+    <span class="t-icon">✦</span>
+    <div>
+      <div class="t-main" id="toastMain">许愿成功</div>
+      <div class="t-sub" id="toastSub">你将得偿所愿</div>
+    </div>
+    <span class="t-time">now</span>
+  </div>
+
+  <div id="successMask">
+    <div id="successCard">
+      <div class="s-icon">🌠</div>
+      <div class="s-title">许愿成功</div>
+      <div class="s-sub">你的愿望已经实现</div>
+      <div class="s-divider"></div>
+    </div>
+  </div>
+
+  <div id="inputBar">
+    <input id="wishInput" type="text" maxlength="50" placeholder="对着流星许下愿望✨" autocomplete="off">
+    <button id="sendBtn" aria-label="发送"><span class="arrow">➤</span></button>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ================= 基础 ================= */
+  var $ = function(id){ return document.getElementById(id); };
+  var input = $('wishInput'), sendBtn = $('sendBtn');
+  var layer = $('meteorLayer'), toast = $('toast');
+  var successMask = $('successMask');
+
+  // 设备号（同表白墙项目的 client_id 逻辑：本地持久化）
+  var CLIENT_KEY = 'wishwall_client_id';
+  var clientId = '';
+  try { clientId = localStorage.getItem(CLIENT_KEY) || ''; } catch(e){}
+  if(!clientId){
+    clientId = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    try { localStorage.setItem(CLIENT_KEY, clientId); } catch(e){}
+  }
+
+  function fetchTimeout(url, opts, ms){
+    opts = opts || {};
+    var ctrl = new AbortController();
+    var timer = setTimeout(function(){ ctrl.abort(); }, ms || 15000);
+    opts.signal = ctrl.signal;
+    return fetch(url, opts).finally(function(){ clearTimeout(timer); });
+  }
+
+  /* ================= 星空背景（canvas 闪烁星点） ================= */
+  var canvas = $('stars'), ctx = canvas.getContext('2d');
+  var stars = [], W = 0, H = 0;
+
+  function resize(){
+    W = canvas.width = window.innerWidth * devicePixelRatio;
+    H = canvas.height = window.innerHeight * devicePixelRatio;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    buildStars();
+  }
+  function buildStars(){
+    stars = [];
+    var n = Math.round(window.innerWidth * window.innerHeight / 9000);
+    n = Math.max(60, Math.min(240, n));
+    for(var i = 0; i < n; i++){
+      stars.push({
+        x: Math.random(), y: Math.random(),
+        r: Math.random() * 1.1 + .3,
+        p: Math.random() * Math.PI * 2,
+        s: .4 + Math.random() * 1.2
+      });
+    }
+  }
+  var lastFrame = 0;
+  function drawStars(t){
+    if(t - lastFrame < 90) { requestAnimationFrame(drawStars); return; }
+    lastFrame = t;
+    ctx.clearRect(0, 0, W, H);
+    for(var i = 0; i < stars.length; i++){
+      var st = stars[i];
+      var tw = .35 + .65 * Math.abs(Math.sin(st.p + t / 1000 * st.s));
+      ctx.beginPath();
+      ctx.arc(st.x * W, st.y * H, st.r * devicePixelRatio, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,' + tw.toFixed(3) + ')';
+      ctx.fill();
+    }
+    requestAnimationFrame(drawStars);
+  }
+  window.addEventListener('resize', resize, { passive: true });
+  resize();
+  requestAnimationFrame(drawStars);
+
+  /* ================= 流星引擎 ================= */
+  // 方向：右上 → 左下（对齐参考图），倾斜角约 14°
+  var ANGLE = 14 * Math.PI / 180;
+  var DX = -Math.cos(ANGLE), DY = Math.sin(ANGLE); // 单位方向向量
+
+  // 愿望池：服务端拉回来的愿望 + 待播队列
+  var wishPool = [];       // 已展示过的愿望（循环重播）
+  var freshQueue = [];     // 新拉到、还没上过天的愿望（优先）
+  var seenIds = Object.create(null);
+
+  function spawnMeteor(withWish){
+    var m = document.createElement('div');
+    m.className = 'meteor' + (withWish ? ' bright' : '');
+    var vw = window.innerWidth, vh = window.innerHeight;
+
+    // 起点：上半区随机（偏右），落点穿过屏幕
+    var startX = vw * (0.35 + Math.random() * 0.75);
+    var startY = -30 - Math.random() * vh * 0.25;
+    if(Math.random() < .3){ startX = vw + 40; startY = Math.random() * vh * 0.3; } // 右侧入射
+    m.style.left = '0px'; m.style.top = '0px';
+    m.style.transform = 'translate(' + startX + 'px,' + startY + 'px)';
+
+    if(withWish){
+      var wt = document.createElement('span');
+      wt.className = 'wish-text';
+      wt.textContent = withWish;
+      m.appendChild(wt);
+    }
+    layer.appendChild(m);
+
+    // 动画参数
+    var dist = Math.hypot(vw, vh) * (1.05 + Math.random() * .4);
+    var dur = withWish ? 5200 + Math.random() * 1800 : 2600 + Math.random() * 1600;
+    var startTs = null;
+    var wishEl = withWish ? m.firstChild : null;
+
+    function step(ts){
+      if(!startTs) startTs = ts;
+      var p = (ts - startTs) / dur;
+      if(p >= 1){ if(m.parentNode) m.parentNode.removeChild(m); return; }
+      var eased = p; // 匀速更像流星
+      var x = startX + DX * dist * eased;
+      var y = startY + DY * dist * eased;
+      // 尾部渐隐
+      var fade = p < .08 ? p / .08 : (p > .72 ? Math.max(0, (1 - p) / .28) : 1);
+      m.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+      m.style.opacity = fade.toFixed(3);
+      if(wishEl){
+        // 愿望文字：飞行中段渐显
+        var wop = p < .18 ? 0 : (p < .38 ? (p - .18) / .2 : (p > .78 ? Math.max(0, (1 - p) / .22) : 1));
+        wishEl.style.opacity = Math.min(.95, wop).toFixed(3);
+      }
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // 装饰流星：持续不断的小流星
+  (function decoLoop(){
+    spawnMeteor(null);
+    setTimeout(decoLoop, 500 + Math.random() * 1900);
+  })();
+
+  // 愿望流星：从池子里取愿望上天
+  function nextWishText(){
+    if(freshQueue.length) return freshQueue.shift();
+    if(wishPool.length) return wishPool[Math.floor(Math.random() * wishPool.length)];
+    return null;
+  }
+  (function wishLoop(){
+    var w = nextWishText();
+    if(w) spawnMeteor(w);
+    setTimeout(wishLoop, 3200 + Math.random() * 4200);
+  })();
+
+  function acceptWishes(list, isFresh){
+    (list || []).forEach(function(w){
+      if(!w || seenIds[w.id]) return;
+      seenIds[w.id] = true;
+      wishPool.push(w.content);
+      if(wishPool.length > 200) wishPool.shift();
+      if(isFresh && w.content) freshQueue.push(w.content);
+    });
+  }
+
+  /* ================= 服务端同步 ================= */
+  var lastSince = 0;
+
+  function bootstrap(){
+    fetchTimeout('/api/wishes?since=0', {}, 15000)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d && d.ok){
+          acceptWishes(d.wishes, false);
+          lastSince = d.server_time || Date.now();
+          // 进站 1 秒内让第一条愿望流星起飞（最近的愿望优先）
+          if(wishPool.length){
+            setTimeout(function(){ spawnMeteor(wishPool[wishPool.length - 1]); }, 1000);
+          }
+        }
+      })
+      .catch(function(){ /* 首屏失败：静默，流星背景照常跑 */ });
+  }
+
+  function poll(){
+    if(!lastSince) return;
+    fetchTimeout('/api/wishes?since=' + lastSince, {}, 15000)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d && d.ok){
+          if(d.wishes && d.wishes.length){
+            acceptWishes(d.wishes, true);   // 新愿望优先上天下一条流星
+            var latest = d.wishes[d.wishes.length - 1];
+            if(latest && latest.created_at > lastSince) lastSince = latest.created_at;
+          } else if(d.server_time){
+            lastSince = d.server_time;
+          }
+        }
+      })
+      .catch(function(){ /* 轮询失败：下轮再试 */ });
+  }
+  setInterval(poll, 15000);
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden) poll(); // 回前台立刻补拉一次
+  });
+
+  bootstrap();
+
+  /* ================= 提交愿望 ================= */
+  var toastTimer = null;
+  function showToast(main, sub){
+    $('toastMain').textContent = main;
+    $('toastSub').textContent = sub || '';
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 3200);
+  }
+
+  var successTimer = null;
+  function showSuccess(){
+    successMask.classList.add('show');
+    clearTimeout(successTimer);
+    successTimer = setTimeout(function(){ successMask.classList.remove('show'); }, 2800);
+  }
+  successMask.addEventListener('click', function(){ successMask.classList.remove('show'); });
+
+  function shakeInput(){
+    input.classList.remove('shake');
+    void input.offsetWidth; // 重启动画
+    input.classList.add('shake');
+  }
+
+  function submit(){
+    var content = input.value.trim();
+    if(!content){ shakeInput(); input.focus(); return; }
+    sendBtn.disabled = true;
+    fetchTimeout('/api/wish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: content, client_id: clientId })
+    }, 20000)
+      .then(function(r){ return r.json().then(function(d){ return { status: r.status, data: d }; }); })
+      .then(function(res){
+        if(res.data && res.data.ok){
+          input.value = '';
+          // 立即让新愿望上天 + 入池
+          if(res.data.wish){
+            seenIds[res.data.wish.id] = true;
+            wishPool.push(res.data.wish.content);
+          }
+          spawnMeteor(content);
+          showToast('许愿成功', '你将得偿所愿');
+          showSuccess();
+        } else {
+          shakeInput();
+          showToast((res.data && res.data.error) || '许愿失败，请稍后再试', '');
+          input.focus();
+        }
+      })
+      .catch(function(){
+        shakeInput();
+        showToast('网络不佳，愿望暂时没有送达', '流星稍后会再来，请重试');
+        input.focus();
+      })
+      .finally(function(){ sendBtn.disabled = false; });
+  }
+
+  sendBtn.addEventListener('click', submit);
+  input.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' || e.keyCode === 13){ e.preventDefault(); submit(); }
+  });
+
+  /* ================= 导航按钮 ================= */
+  $('backBtn').addEventListener('click', function(){
+    if(history.length > 1) history.back();
+    else showToast('已经在这里啦', '流星雨正为你落下');
+  });
+  $('warnBtn').addEventListener('click', function(){
+    showToast('对着流星许下愿望', '每 10 秒可许一个愿，最多 50 字');
+  });
+})();
+</script>
+</body>
+</html>
