@@ -1,4 +1,4 @@
-# 流星雨许愿墙（Cloudflare Pages + Functions + D1）
+，# 流星雨许愿墙（Cloudflare Pages + Functions + D1）
 
 愿望以流星的形式划过夜空。发出的愿望立即化作一颗流星飞过，全站所有人都能看到彼此的愿望。
 
